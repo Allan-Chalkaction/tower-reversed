@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import './index.css'
 
 function Logo() {
@@ -263,6 +264,53 @@ function Process() {
 }
 
 function Booking() {
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (function (C: any, A: string, L: string) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const p = function (a: any, ar: any) { a.q.push(ar) }
+      const d = C.document
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      C.Cal = C.Cal || function (...args: any[]) {
+        const cal = C.Cal
+        if (!cal.loaded) {
+          cal.ns = {}
+          cal.q = cal.q || []
+          const s = d.createElement('script')
+          s.src = A
+          d.head.appendChild(s)
+          cal.loaded = true
+        }
+        if (args[0] === L) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const api: any = function (...a: any[]) { p(api, a) }
+          const namespace = args[1]
+          api.q = api.q || []
+          if (typeof namespace === 'string') {
+            cal.ns[namespace] = cal.ns[namespace] || api
+            p(cal.ns[namespace], args)
+            p(cal, ['initNamespace', namespace])
+          } else p(cal, args)
+          return
+        }
+        p(cal, args)
+      }
+    })(window, 'https://app.cal.com/embed/embed.js', 'init')
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const Cal = (window as any).Cal
+    Cal('init', 'feng-shui-consultation', { origin: 'https://app.cal.com' })
+    Cal.ns['feng-shui-consultation']('inline', {
+      elementOrSelector: '#my-cal-inline-feng-shui-consultation',
+      config: { layout: 'month_view', useSlotsViewOnSmallScreen: 'true' },
+      calLink: 'almittelstaedt/feng-shui-consultation',
+    })
+    Cal.ns['feng-shui-consultation']('ui', {
+      hideEventTypeDetails: false,
+      layout: 'month_view',
+    })
+  }, [])
+
   return (
     <section id="booking" className="py-24 border-t border-charcoal-light">
       <div className="max-w-6xl mx-auto px-6">
@@ -284,53 +332,11 @@ function Booking() {
               that truly supports you.
             </p>
           </div>
-          <div className="bg-charcoal-dark p-8 min-h-[400px] flex items-center justify-center">
-            {/* Cal.com embed placeholder */}
+          <div className="bg-charcoal-dark min-h-[900px]">
             <div
-              id="cal-embed"
-              className="w-full h-full flex items-center justify-center"
-            >
-              {/*
-                Cal.com Integration:
-                Add the Cal.com embed script to index.html:
-
-                <script type="text/javascript">
-                  (function (C, A, L) {
-                    let p = function (a, ar) { a.q.push(ar); };
-                    let d = C.document;
-                    C.Cal = C.Cal || function () {
-                      let cal = C.Cal;
-                      let ar = arguments;
-                      if (!cal.loaded) {
-                        cal.ns = {};
-                        cal.q = cal.q || [];
-                        d.head.appendChild(d.createElement("script")).src = A;
-                        cal.loaded = true;
-                      }
-                      if (ar[0] === L) {
-                        const api = function () { p(api, arguments); };
-                        const namespace = ar[1];
-                        api.q = api.q || [];
-                        typeof namespace === "string"
-                          ? (cal.ns[namespace] = api) && p(api, ar)
-                          : p(cal, ar);
-                        return;
-                      }
-                      p(cal, ar);
-                    };
-                  })(window, "https://app.cal.com/embed/embed.js", "init");
-                  Cal("init", {origin:"https://cal.com"});
-                  Cal("inline", {
-                    elementOrSelector:"#cal-embed",
-                    calLink: "YOUR_CAL_LINK",
-                    layout: "month_view"
-                  });
-                </script>
-              */}
-              <p className="font-cormorant text-offwhite-muted italic text-center">
-                Booking calendar will appear here
-              </p>
-            </div>
+              id="my-cal-inline-feng-shui-consultation"
+              style={{ width: '100%', height: '900px', overflow: 'hidden' }}
+            />
           </div>
         </div>
       </div>
