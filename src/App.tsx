@@ -1,9 +1,14 @@
 import { useEffect } from 'react'
+import { BrowserRouter, Routes, Route, Navigate, Link, useLocation } from 'react-router-dom'
+import { AuthProvider, useAuth } from './lib/auth'
+import Login from './pages/Login'
+import Signup from './pages/Signup'
+import Portal from './pages/Portal'
 import './index.css'
 
 function Logo() {
   return (
-    <a href="#" className="flex items-center gap-3 group">
+    <Link to="/" className="flex items-center gap-3 group">
       <svg
         width="32"
         height="32"
@@ -17,40 +22,65 @@ function Logo() {
       <span className="font-cinzel text-lg tracking-widest uppercase text-offwhite">
         Tower Reversed
       </span>
-    </a>
+    </Link>
   )
 }
 
 function Nav() {
+  const { user } = useAuth()
+  const location = useLocation()
+  const isHome = location.pathname === '/'
+
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-charcoal/95 backdrop-blur-sm border-b border-charcoal-light">
       <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
         <Logo />
         <div className="hidden md:flex items-center gap-8">
-          <a
-            href="#services"
-            className="font-cinzel text-sm tracking-wider text-offwhite-muted hover:text-offwhite transition-colors"
-          >
-            Services
-          </a>
-          <a
-            href="#process"
-            className="font-cinzel text-sm tracking-wider text-offwhite-muted hover:text-offwhite transition-colors"
-          >
-            Process
-          </a>
-          <a
-            href="#booking"
-            className="font-cinzel text-sm tracking-wider text-offwhite-muted hover:text-offwhite transition-colors"
-          >
-            About
-          </a>
-          <a
-            href="#booking"
-            className="font-cinzel text-sm tracking-wider px-5 py-2 border border-teal text-teal hover:bg-teal hover:text-charcoal transition-all"
-          >
-            Book a Session
-          </a>
+          {isHome && (
+            <>
+              <a
+                href="#services"
+                className="font-cinzel text-sm tracking-wider text-offwhite-muted hover:text-offwhite transition-colors"
+              >
+                Services
+              </a>
+              <a
+                href="#process"
+                className="font-cinzel text-sm tracking-wider text-offwhite-muted hover:text-offwhite transition-colors"
+              >
+                Process
+              </a>
+              <a
+                href="#booking"
+                className="font-cinzel text-sm tracking-wider text-offwhite-muted hover:text-offwhite transition-colors"
+              >
+                About
+              </a>
+            </>
+          )}
+          {user ? (
+            <Link
+              to="/portal"
+              className="font-cinzel text-sm tracking-wider px-5 py-2 border border-teal text-teal hover:bg-teal hover:text-charcoal transition-all"
+            >
+              My Portal
+            </Link>
+          ) : (
+            <>
+              <Link
+                to="/login"
+                className="font-cinzel text-sm tracking-wider text-offwhite-muted hover:text-offwhite transition-colors"
+              >
+                Sign In
+              </Link>
+              <Link
+                to="/signup"
+                className="font-cinzel text-sm tracking-wider px-5 py-2 border border-teal text-teal hover:bg-teal hover:text-charcoal transition-all"
+              >
+                Sign Up
+              </Link>
+            </>
+          )}
         </div>
       </div>
     </nav>
@@ -378,18 +408,68 @@ function Footer() {
   )
 }
 
-function App() {
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth()
+
+  if (loading) return null
+  if (!user) return <Navigate to="/login" replace />
+
+  return <>{children}</>
+}
+
+function HomePage() {
+  return (
+    <>
+      <Hero />
+      <Services />
+      <Process />
+      <Booking />
+    </>
+  )
+}
+
+function AppLayout() {
+  const location = useLocation()
+  const isPortal = location.pathname === '/portal'
+
+  if (isPortal) {
+    return (
+      <ProtectedRoute>
+        <Portal />
+      </ProtectedRoute>
+    )
+  }
+
   return (
     <div className="min-h-screen flex flex-col">
       <Nav />
       <main>
-        <Hero />
-        <Services />
-        <Process />
-        <Booking />
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
+          <Route
+            path="/portal"
+            element={
+              <ProtectedRoute>
+                <Portal />
+              </ProtectedRoute>
+            }
+          />
+        </Routes>
       </main>
       <Footer />
     </div>
+  )
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <AppLayout />
+      </AuthProvider>
+    </BrowserRouter>
   )
 }
 
