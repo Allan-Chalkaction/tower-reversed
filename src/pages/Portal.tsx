@@ -30,15 +30,36 @@ interface PasswordFormValues {
   confirmPassword: string
 }
 
+interface IntakeOccupant {
+  name: string
+  relationship: string
+  birthDate: string
+  birthTime: string
+  birthTimeUnknown: boolean
+  birthCity: string
+  birthState: string
+  birthCountry: string
+}
+
+interface IntakeRenovations {
+  hasRenovations: boolean
+  description: string
+  year: number | null
+  roofRemoved: boolean
+  roofYear: number | null
+}
+
 interface IntakeData {
   id: string
-  space_type: string | null
-  square_footage: number | null
+  address: string | null
+  year_built: number | null
+  satellite_url: string | null
+  floor_plan_url: string | null
+  renovations: IntakeRenovations | null
+  occupants: IntakeOccupant[] | null
+  life_concerns: string[] | null
   problems: string | null
   additional_info: string | null
-  occupants: { name: string; birthYear: string }[] | null
-  life_concerns: string[] | null
-  floor_plan_url: string | null
   created_at: string
 }
 
@@ -151,20 +172,8 @@ function Sidebar({ activeView, intakeComplete, onNavigate, onSignOut }: SidebarP
   return (
     <aside className="fixed top-0 left-0 bottom-0 w-[220px] bg-[#222222] border-r border-charcoal-light flex flex-col z-50">
       {/* Logo */}
-      <Link to="/" className="flex items-center gap-3 px-5 pt-6 pb-8 group">
-        <svg
-          width="28"
-          height="28"
-          viewBox="0 0 32 32"
-          fill="none"
-          className="text-offwhite group-hover:text-teal transition-colors shrink-0"
-        >
-          <circle cx="16" cy="16" r="14" stroke="currentColor" strokeWidth="1.5" />
-          <circle cx="16" cy="16" r="6" stroke="currentColor" strokeWidth="1" opacity="0.5" />
-        </svg>
-        <span className="font-cinzel text-sm tracking-widest uppercase text-offwhite">
-          Tower Reversed
-        </span>
+      <Link to="/" className="px-5 pt-6 pb-8">
+        <img src="/logo.jpg" alt="Tower Reversed" style={{ height: 36, width: 'auto' }} />
       </Link>
 
       {/* Navigation */}
@@ -447,45 +456,78 @@ function IntakeView({ intake, loading }: { intake: IntakeData | null; loading: b
 
   return (
     <div className="space-y-6">
+      {/* Property */}
       <div className="border border-charcoal-light p-6 space-y-4">
-        <h3 className="font-cinzel text-base text-offwhite mb-2">Your Space</h3>
+        <h3 className="font-cinzel text-base text-offwhite mb-2">Property</h3>
         <div className="grid grid-cols-2 gap-4">
-          {intake.space_type && (
-            <div>
-              <p className="font-cinzel text-xs tracking-wider text-offwhite-muted mb-1">Space Type</p>
-              <p className="font-cormorant text-lg text-offwhite">{intake.space_type}</p>
+          {intake.address && (
+            <div className="col-span-2">
+              <p className="font-cinzel text-xs tracking-wider text-offwhite-muted mb-1">Address</p>
+              <p className="font-cormorant text-lg text-offwhite">{intake.address}</p>
             </div>
           )}
-          {intake.square_footage && (
+          {intake.year_built && (
             <div>
-              <p className="font-cinzel text-xs tracking-wider text-offwhite-muted mb-1">Square Footage</p>
-              <p className="font-cormorant text-lg text-offwhite">{intake.square_footage.toLocaleString()} sq ft</p>
+              <p className="font-cinzel text-xs tracking-wider text-offwhite-muted mb-1">Year Built</p>
+              <p className="font-cormorant text-lg text-offwhite">{intake.year_built}</p>
             </div>
           )}
         </div>
-        {intake.problems && (
+        {intake.renovations?.hasRenovations && (
           <div>
-            <p className="font-cinzel text-xs tracking-wider text-offwhite-muted mb-1">Current Challenges</p>
-            <p className="font-cormorant text-base text-offwhite-muted leading-relaxed">{intake.problems}</p>
+            <p className="font-cinzel text-xs tracking-wider text-offwhite-muted mb-1">Renovations</p>
+            <p className="font-cormorant text-base text-offwhite-muted leading-relaxed">
+              {intake.renovations.description}
+              {intake.renovations.year && ` (${intake.renovations.year})`}
+            </p>
           </div>
         )}
-        {intake.additional_info && (
+        {intake.renovations?.roofRemoved && (
           <div>
-            <p className="font-cinzel text-xs tracking-wider text-offwhite-muted mb-1">Additional Information</p>
-            <p className="font-cormorant text-base text-offwhite-muted leading-relaxed">{intake.additional_info}</p>
+            <p className="font-cinzel text-xs tracking-wider text-offwhite-muted mb-1">Roof Removed/Replaced</p>
+            <p className="font-cormorant text-base text-offwhite-muted">
+              Yes{intake.renovations.roofYear && ` (${intake.renovations.roofYear})`}
+            </p>
           </div>
         )}
       </div>
 
+      {/* Uploads */}
+      {(intake.satellite_url || intake.floor_plan_url) && (
+        <div className="border border-charcoal-light p-6 space-y-4">
+          {intake.satellite_url && (
+            <div>
+              <h3 className="font-cinzel text-base text-offwhite mb-3">Satellite View</h3>
+              <img src={intake.satellite_url} alt="Satellite view" className="max-h-64 opacity-90" />
+            </div>
+          )}
+          {intake.floor_plan_url && (
+            <div>
+              <h3 className="font-cinzel text-base text-offwhite mb-3">Floor Plan</h3>
+              <img src={intake.floor_plan_url} alt="Floor plan" className="max-h-64 opacity-90" />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Occupants */}
       {intake.occupants && intake.occupants.length > 0 && (
         <div className="border border-charcoal-light p-6">
           <h3 className="font-cinzel text-base text-offwhite mb-4">Occupants</h3>
-          <div className="space-y-2">
+          <div className="space-y-3">
             {intake.occupants.map((occ, i) => (
-              <div key={i} className="flex items-center gap-4">
+              <div key={i} className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
                 <p className="font-cormorant text-lg text-offwhite">{occ.name}</p>
-                {occ.birthYear && (
-                  <p className="font-cormorant text-base text-offwhite-muted">Born {occ.birthYear}</p>
+                <p className="font-cormorant text-sm text-offwhite-muted">{occ.relationship}</p>
+                {occ.birthDate && (
+                  <p className="font-cormorant text-sm text-offwhite-muted">
+                    Born {occ.birthDate}{occ.birthTime && !occ.birthTimeUnknown ? ` at ${occ.birthTime}` : ''}
+                  </p>
+                )}
+                {(occ.birthCity || occ.birthState || occ.birthCountry) && (
+                  <p className="font-cormorant text-sm text-offwhite-muted">
+                    {[occ.birthCity, occ.birthState, occ.birthCountry].filter(Boolean).join(', ')}
+                  </p>
                 )}
               </div>
             ))}
@@ -493,6 +535,7 @@ function IntakeView({ intake, loading }: { intake: IntakeData | null; loading: b
         </div>
       )}
 
+      {/* Life Concerns */}
       {intake.life_concerns && intake.life_concerns.length > 0 && (
         <div className="border border-charcoal-light p-6">
           <h3 className="font-cinzel text-base text-offwhite mb-4">Life Concerns</h3>
@@ -509,14 +552,22 @@ function IntakeView({ intake, loading }: { intake: IntakeData | null; loading: b
         </div>
       )}
 
-      {intake.floor_plan_url && (
-        <div className="border border-charcoal-light p-6">
-          <h3 className="font-cinzel text-base text-offwhite mb-4">Floor Plan</h3>
-          <img
-            src={intake.floor_plan_url}
-            alt="Floor plan"
-            className="max-h-80 opacity-90"
-          />
+      {/* Goals & Issues */}
+      {(intake.problems || intake.additional_info) && (
+        <div className="border border-charcoal-light p-6 space-y-4">
+          <h3 className="font-cinzel text-base text-offwhite mb-2">Goals & Issues</h3>
+          {intake.problems && (
+            <div>
+              <p className="font-cinzel text-xs tracking-wider text-offwhite-muted mb-1">Current Challenges</p>
+              <p className="font-cormorant text-base text-offwhite-muted leading-relaxed">{intake.problems}</p>
+            </div>
+          )}
+          {intake.additional_info && (
+            <div>
+              <p className="font-cinzel text-xs tracking-wider text-offwhite-muted mb-1">Additional Information</p>
+              <p className="font-cormorant text-base text-offwhite-muted leading-relaxed">{intake.additional_info}</p>
+            </div>
+          )}
         </div>
       )}
 
@@ -752,7 +803,7 @@ export default function Portal() {
       // Fetch intake form
       const { data: intakeData } = await supabase
         .from('intake_forms')
-        .select('id, space_type, square_footage, problems, additional_info, occupants, life_concerns, floor_plan_url, created_at')
+        .select('id, address, year_built, satellite_url, floor_plan_url, renovations, occupants, life_concerns, problems, additional_info, created_at')
         .eq('user_id', session.user.id)
         .limit(1)
         .single()

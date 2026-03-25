@@ -36,20 +36,8 @@ function useIntakeStatus() {
 
 function Logo() {
   return (
-    <Link to="/" className="flex items-center gap-3 group">
-      <svg
-        width="32"
-        height="32"
-        viewBox="0 0 32 32"
-        fill="none"
-        className="text-offwhite group-hover:text-teal transition-colors"
-      >
-        <circle cx="16" cy="16" r="14" stroke="currentColor" strokeWidth="1.5" />
-        <circle cx="16" cy="16" r="6" stroke="currentColor" strokeWidth="1" opacity="0.5" />
-      </svg>
-      <span className="font-cinzel text-lg tracking-widest uppercase text-offwhite">
-        Tower Reversed
-      </span>
+    <Link to="/">
+      <img src="/logo.jpg" alt="Tower Reversed" style={{ height: 160, width: 'auto' }} />
     </Link>
   )
 }
@@ -66,7 +54,7 @@ function Nav() {
   }
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 bg-charcoal/95 backdrop-blur-sm border-b border-charcoal-light">
+    <nav className="fixed top-0 left-0 right-0 z-50 bg-charcoal/95 backdrop-blur-sm border-b border-charcoal-light overflow-visible">
       <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
         <Logo />
         <div className="hidden md:flex items-center gap-8">
@@ -267,6 +255,12 @@ const services = [
     description:
       'Before you commit to a purchase or rental, understand what energies you\'re inviting in. We evaluate prospective properties to help you make an informed decision aligned with your goals.',
   },
+  {
+    number: '04',
+    title: 'Human Design Reading',
+    description:
+      'A precise look at how you\'re designed to operate. We translate your chart into clear, grounded insight — so your decisions, energy, and direction all align.',
+  },
 ]
 
 function Services() {
@@ -276,7 +270,7 @@ function Services() {
         <h2 className="font-cinzel text-sm tracking-[0.3em] uppercase text-teal mb-16">
           Services
         </h2>
-        <div className="grid md:grid-cols-3 gap-12">
+        <div className="grid md:grid-cols-4 gap-12">
           {services.map((service) => (
             <div key={service.number} className="group">
               <span className="font-cinzel text-6xl text-charcoal-light group-hover:text-teal/30 transition-colors">

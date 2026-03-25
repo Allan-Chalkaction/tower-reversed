@@ -1,3 +1,11 @@
+// ── SQL Migration (run in Supabase SQL editor before using) ──────────
+// ALTER TABLE intake_forms ADD COLUMN IF NOT EXISTS address text;
+// ALTER TABLE intake_forms ADD COLUMN IF NOT EXISTS year_built int;
+// ALTER TABLE intake_forms ADD COLUMN IF NOT EXISTS renovations jsonb;
+// ALTER TABLE intake_forms ADD COLUMN IF NOT EXISTS satellite_url text;
+// ALTER TABLE intake_forms DROP COLUMN IF EXISTS front_door_direction;
+// ALTER TABLE intake_forms ADD COLUMN IF NOT EXISTS service text DEFAULT 'feng_shui';
+
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
@@ -5,12 +13,28 @@ import { supabase } from '../lib/supabase'
 
 // ── Types ────────────────────────────────────────────────────────────
 
+type Service = 'feng_shui' | 'human_design' | 'both'
+
 interface Occupant {
   name: string
-  birthYear: string
+  relationship: string
+  birthDate: string
+  birthTime: string
+  birthTimeUnknown: boolean
+  birthCity: string
+  birthState: string
+  birthCountry: string
 }
 
-const SPACE_TYPES = ['Home', 'Apartment', 'Condo', 'Office'] as const
+interface Renovations {
+  hasRenovations: boolean
+  description: string
+  year: number | null
+  roofRemoved: boolean
+  roofYear: number | null
+}
+
+const RELATIONSHIPS = ['Self', 'Spouse/Partner', 'Child', 'Parent', 'Roommate', 'Other'] as const
 
 const LIFE_CONCERNS = [
   'Wealth & Career',
@@ -23,6 +47,12 @@ const LIFE_CONCERNS = [
   'Travel & Helpful People',
 ] as const
 
+const SERVICE_OPTIONS: { id: Service; title: string; description: string }[] = [
+  { id: 'feng_shui', title: 'Feng Shui Consultation', description: 'Full space analysis using classical feng shui frameworks' },
+  { id: 'human_design', title: 'Human Design Reading', description: 'A precise look at how you\'re designed to operate' },
+  { id: 'both', title: 'Both', description: 'Complete consultation combining feng shui and human design' },
+]
+
 // ── Shared styles ────────────────────────────────────────────────────
 
 const inputClass =
@@ -30,11 +60,59 @@ const inputClass =
 
 const labelClass = 'font-cinzel text-xs tracking-wider text-offwhite-muted block mb-2'
 
+const btnNext = 'font-cinzel text-sm tracking-wider px-8 py-3 bg-magenta text-offwhite hover:bg-magenta-dark transition-colors'
+const btnBack = 'font-cinzel text-sm tracking-wider px-8 py-3 border border-charcoal-light text-offwhite-muted hover:border-offwhite hover:text-offwhite transition-colors'
+
+// ── File upload area ─────────────────────────────────────────────────
+
+function FileUpload({
+  label,
+  hint,
+  file,
+  previewUrl,
+  onSelect,
+}: {
+  label: string
+  hint: string
+  file: File | null
+  previewUrl: string | null
+  onSelect: (file: File | null) => void
+}) {
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    onSelect(e.target.files?.[0] ?? null)
+  }
+
+  return (
+    <div>
+      <label className={labelClass}>{label}</label>
+      <p className="font-cormorant text-sm text-offwhite-muted/60 mb-3">{hint}</p>
+      <label className="block border border-dashed border-charcoal-light hover:border-offwhite/30 transition-colors cursor-pointer p-8 text-center">
+        <input type="file" accept="image/*" onChange={handleChange} className="hidden" />
+        {previewUrl ? (
+          <div>
+            <img src={previewUrl} alt="Preview" className="max-h-48 mx-auto mb-3 opacity-90" />
+            <p className="font-cormorant text-sm text-offwhite-muted">{file?.name}</p>
+            <p className="font-cormorant text-xs text-offwhite-muted/60 mt-1">Click to replace</p>
+          </div>
+        ) : (
+          <div>
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mx-auto text-offwhite-muted/40 mb-3">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+              <polyline points="17,8 12,3 7,8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+            <p className="font-cormorant text-base text-offwhite-muted">Click to upload an image</p>
+            <p className="font-cormorant text-sm text-offwhite-muted/50 mt-1">PNG, JPG, or WEBP</p>
+          </div>
+        )}
+      </label>
+    </div>
+  )
+}
+
 // ── Progress indicator ───────────────────────────────────────────────
 
-function StepIndicator({ current }: { current: number }) {
-  const steps = ['Your Space', 'Occupants & Intentions', 'Floor Plan']
-
+function StepIndicator({ current, steps }: { current: number; steps: string[] }) {
   return (
     <div className="flex items-center justify-center gap-2 mb-12">
       {steps.map((label, i) => {
@@ -45,9 +123,7 @@ function StepIndicator({ current }: { current: number }) {
         return (
           <div key={label} className="flex items-center gap-2">
             {i > 0 && (
-              <div
-                className={`w-12 h-px ${isComplete ? 'bg-teal' : 'bg-charcoal-light'}`}
-              />
+              <div className={`w-12 h-px ${isComplete ? 'bg-teal' : 'bg-charcoal-light'}`} />
             )}
             <div className="flex items-center gap-2">
               <div
@@ -76,58 +152,136 @@ function StepIndicator({ current }: { current: number }) {
   )
 }
 
+// ── Helpers ──────────────────────────────────────────────────────────
+
+function emptyOccupant(relationship = 'Self'): Occupant {
+  return { name: '', relationship, birthDate: '', birthTime: '', birthTimeUnknown: false, birthCity: '', birthState: '', birthCountry: 'USA' }
+}
+
+async function uploadFile(bucket: string, path: string, file: File): Promise<string | null> {
+  const { error } = await supabase.storage.from(bucket).upload(path, file)
+  if (error) throw error
+  const { data } = supabase.storage.from(bucket).getPublicUrl(path)
+  return data.publicUrl
+}
+
+function getStepLabels(service: Service | null): string[] {
+  if (service === 'human_design') return ['Occupants']
+  return ['Property', 'Occupants', 'Goals & Issues']
+}
+
+// Maps the internal step number (starting at 1 after service selection) to the logical step id
+type StepId = 'service' | 'property' | 'occupants' | 'goals'
+
+function getStepSequence(service: Service | null): StepId[] {
+  if (!service) return ['service']
+  if (service === 'human_design') return ['service', 'occupants']
+  return ['service', 'property', 'occupants', 'goals']
+}
+
 // ── Main component ───────────────────────────────────────────────────
 
 export default function Intake() {
   const { session } = useAuth()
   const navigate = useNavigate()
 
-  const [step, setStep] = useState(1)
+  const [step, setStep] = useState(0) // 0 = service selection
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [checkingExisting, setCheckingExisting] = useState(true)
 
-  // Step 1
-  const [spaceType, setSpaceType] = useState('')
-  const [squareFootage, setSquareFootage] = useState('')
+  // Service selection
+  const [service, setService] = useState<Service | null>(null)
+
+  // Property
+  const [address, setAddress] = useState('')
+  const [yearBuilt, setYearBuilt] = useState('')
+  const [satelliteFile, setSatelliteFile] = useState<File | null>(null)
+  const [satellitePreview, setSatellitePreview] = useState<string | null>(null)
+  const [floorPlanFile, setFloorPlanFile] = useState<File | null>(null)
+  const [floorPlanPreview, setFloorPlanPreview] = useState<string | null>(null)
+  const [renovations, setRenovations] = useState<Renovations>({
+    hasRenovations: false,
+    description: '',
+    year: null,
+    roofRemoved: false,
+    roofYear: null,
+  })
+
+  // Occupants
+  const [occupants, setOccupants] = useState<Occupant[]>([emptyOccupant('Self')])
+
+  // Goals & Issues
+  const [lifeConcerns, setLifeConcerns] = useState<string[]>([])
   const [problems, setProblems] = useState('')
   const [additionalInfo, setAdditionalInfo] = useState('')
 
-  // Step 2
-  const [occupants, setOccupants] = useState<Occupant[]>([{ name: '', birthYear: '' }])
-  const [lifeConcerns, setLifeConcerns] = useState<string[]>([])
-
-  // Step 3
-  const [floorPlanFile, setFloorPlanFile] = useState<File | null>(null)
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  // Derived
+  const sequence = getStepSequence(service)
+  const currentStepId = sequence[step] ?? 'service'
+  const totalSteps = sequence.length
+  const isLastStep = step === totalSteps - 1
+  const stepLabels = getStepLabels(service)
+  // Progress indicator step number (1-based, excludes service selection step)
+  const progressStep = step // step 0 = service, steps 1+ map to labels
 
   // Check if intake already exists
   useEffect(() => {
     async function check() {
       if (!session?.user?.id) return
-
       const { data } = await supabase
         .from('intake_forms')
         .select('id')
         .eq('user_id', session.user.id)
         .limit(1)
-
       if (data && data.length > 0) {
         navigate('/portal', { replace: true })
         return
       }
       setCheckingExisting(false)
     }
-
     check()
   }, [session, navigate])
 
-  // Cleanup preview URL
+  // Cleanup preview URLs
   useEffect(() => {
     return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl)
+      if (satellitePreview) URL.revokeObjectURL(satellitePreview)
+      if (floorPlanPreview) URL.revokeObjectURL(floorPlanPreview)
     }
-  }, [previewUrl])
+  }, [satellitePreview, floorPlanPreview])
+
+  // ── File handlers ──────────────────────────────────────────────────
+
+  function handleSatelliteSelect(file: File | null) {
+    setSatelliteFile(file)
+    if (satellitePreview) URL.revokeObjectURL(satellitePreview)
+    setSatellitePreview(file ? URL.createObjectURL(file) : null)
+  }
+
+  function handleFloorPlanSelect(file: File | null) {
+    setFloorPlanFile(file)
+    if (floorPlanPreview) URL.revokeObjectURL(floorPlanPreview)
+    setFloorPlanPreview(file ? URL.createObjectURL(file) : null)
+  }
+
+  // ── Occupant handlers ─────────────────────────────────────────────
+
+  function addOccupant() {
+    setOccupants((prev) => [...prev, emptyOccupant('Other')])
+  }
+
+  function removeOccupant(index: number) {
+    setOccupants((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  function updateOccupant(index: number, field: keyof Occupant, value: string | boolean) {
+    setOccupants((prev) =>
+      prev.map((occ, i) => (i === index ? { ...occ, [field]: value } : occ))
+    )
+  }
+
+  // ── Concern toggle ────────────────────────────────────────────────
 
   function toggleConcern(concern: string) {
     setLifeConcerns((prev) =>
@@ -135,66 +289,41 @@ export default function Intake() {
     )
   }
 
-  function addOccupant() {
-    setOccupants((prev) => [...prev, { name: '', birthYear: '' }])
+  // ── Navigation ────────────────────────────────────────────────────
+
+  function nextStep() { setStep((s) => Math.min(s + 1, totalSteps - 1)) }
+  function prevStep() { setStep((s) => Math.max(s - 1, 0)) }
+
+  function selectServiceAndProceed(s: Service) {
+    setService(s)
+    setStep(1)
   }
 
-  function removeOccupant(index: number) {
-    setOccupants((prev) => prev.filter((_, i) => i !== index))
-  }
-
-  function updateOccupant(index: number, field: keyof Occupant, value: string) {
-    setOccupants((prev) =>
-      prev.map((occ, i) => (i === index ? { ...occ, [field]: value } : occ))
-    )
-  }
-
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0] ?? null
-    setFloorPlanFile(file)
-    if (previewUrl) URL.revokeObjectURL(previewUrl)
-    setPreviewUrl(file ? URL.createObjectURL(file) : null)
-  }
-
-  function nextStep() {
-    setStep((s) => Math.min(s + 1, 3))
-  }
-
-  function prevStep() {
-    setStep((s) => Math.max(s - 1, 1))
-  }
+  // ── Submit ────────────────────────────────────────────────────────
 
   async function handleSubmit() {
-    if (!session?.user) return
+    if (!session?.user || !service) return
     setError('')
     setSubmitting(true)
 
     try {
+      const uid = session.user.id
+      let satelliteUrl: string | null = null
       let floorPlanUrl: string | null = null
 
-      // Upload floor plan if provided
-      if (floorPlanFile) {
-        const ext = floorPlanFile.name.split('.').pop()
-        const path = `${session.user.id}/floor-plan/${Date.now()}.${ext}`
+      const isFengShui = service === 'feng_shui' || service === 'both'
 
-        const { error: uploadError } = await supabase.storage
-          .from('intake-files')
-          .upload(path, floorPlanFile)
-
-        if (uploadError) {
-          setError(`Upload failed: ${uploadError.message}`)
-          setSubmitting(false)
-          return
-        }
-
-        const { data: publicUrlData } = supabase.storage
-          .from('intake-files')
-          .getPublicUrl(path)
-
-        floorPlanUrl = publicUrlData.publicUrl
+      if (isFengShui && satelliteFile) {
+        const ext = satelliteFile.name.split('.').pop()
+        satelliteUrl = await uploadFile('intake-files', `${uid}/satellite/${Date.now()}.${ext}`, satelliteFile)
       }
 
-      // Find client record for consultation linking
+      if (isFengShui && floorPlanFile) {
+        const ext = floorPlanFile.name.split('.').pop()
+        floorPlanUrl = await uploadFile('intake-files', `${uid}/floor-plan/${Date.now()}.${ext}`, floorPlanFile)
+      }
+
+      // Link to consultation if one exists
       const { data: clientData } = await supabase
         .from('clients')
         .select('id')
@@ -209,25 +338,26 @@ export default function Intake() {
           .eq('client_id', clientData.id)
           .order('scheduled_at', { ascending: false })
           .limit(1)
-
         if (consult && consult.length > 0) {
           consultationId = consult[0].id
         }
       }
 
-      // Filter out empty occupants
       const validOccupants = occupants.filter((o) => o.name.trim())
 
       const { error: insertError } = await supabase.from('intake_forms').insert({
-        user_id: session.user.id,
+        user_id: uid,
+        service,
         consultation_id: consultationId,
-        space_type: spaceType || null,
-        square_footage: squareFootage ? Number(squareFootage) : null,
-        problems: problems || null,
-        additional_info: additionalInfo || null,
-        occupants: validOccupants,
-        life_concerns: lifeConcerns,
+        address: isFengShui ? (address || null) : null,
+        year_built: isFengShui && yearBuilt ? Number(yearBuilt) : null,
+        satellite_url: satelliteUrl,
         floor_plan_url: floorPlanUrl,
+        renovations: isFengShui ? renovations : null,
+        occupants: validOccupants,
+        life_concerns: isFengShui ? lifeConcerns : null,
+        problems: isFengShui ? (problems || null) : null,
+        additional_info: isFengShui ? (additionalInfo || null) : null,
       })
 
       if (insertError) {
@@ -238,12 +368,143 @@ export default function Intake() {
 
       navigate('/portal', { replace: true })
     } catch (err) {
-      setError('An unexpected error occurred. Please try again.')
+      const msg = err instanceof Error ? err.message : 'An unexpected error occurred.'
+      setError(msg)
       setSubmitting(false)
     }
   }
 
   if (checkingExisting) return null
+
+  // ── Occupant card (shared between feng shui and human design) ─────
+
+  const showRelationship = service !== 'human_design'
+
+  const occupantCards = (
+    <div>
+      <label className={labelClass}>
+        {service === 'human_design' ? 'Who is this reading for?' : 'Occupants'}
+      </label>
+      <p className="font-cormorant text-sm text-offwhite-muted/60 mb-4">
+        {service === 'human_design'
+          ? 'Add yourself and anyone else you would like a reading for.'
+          : 'Add everyone who lives in the space. The first occupant should be the primary resident.'}
+      </p>
+
+      <div className="space-y-4">
+        {occupants.map((occ, i) => (
+          <div key={i} className="border border-charcoal-light p-5 space-y-4 relative">
+            {occupants.length > 1 && (
+              <button
+                onClick={() => removeOccupant(i)}
+                className="absolute top-4 right-4 text-offwhite-muted hover:text-magenta transition-colors"
+                title="Remove occupant"
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <line x1="4" y1="4" x2="12" y2="12" />
+                  <line x1="12" y1="4" x2="4" y2="12" />
+                </svg>
+              </button>
+            )}
+
+            <div className={showRelationship ? 'grid grid-cols-2 gap-4' : ''}>
+              <div>
+                <label className={labelClass}>Name</label>
+                <input
+                  type="text"
+                  value={occ.name}
+                  onChange={(e) => updateOccupant(i, 'name', e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+              {showRelationship && (
+                <div>
+                  <label className={labelClass}>Relationship</label>
+                  <select
+                    value={occ.relationship}
+                    onChange={(e) => updateOccupant(i, 'relationship', e.target.value)}
+                    className={`${inputClass} appearance-none`}
+                  >
+                    {RELATIONSHIPS.map((r) => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className={labelClass}>Birth Date</label>
+                <input
+                  type="date"
+                  value={occ.birthDate}
+                  onChange={(e) => updateOccupant(i, 'birthDate', e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Birth Time</label>
+                <input
+                  type="time"
+                  value={occ.birthTime}
+                  onChange={(e) => updateOccupant(i, 'birthTime', e.target.value)}
+                  disabled={occ.birthTimeUnknown}
+                  className={`${inputClass} ${occ.birthTimeUnknown ? 'opacity-40' : ''}`}
+                />
+                <label className="flex items-center gap-2 mt-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={occ.birthTimeUnknown}
+                    onChange={(e) => updateOccupant(i, 'birthTimeUnknown', e.target.checked)}
+                    className="accent-teal"
+                  />
+                  <span className="font-cormorant text-sm text-offwhite-muted">Time unknown</span>
+                </label>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className={labelClass}>Birth City</label>
+                <input
+                  type="text"
+                  value={occ.birthCity}
+                  onChange={(e) => updateOccupant(i, 'birthCity', e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Birth State / Province</label>
+                <input
+                  type="text"
+                  value={occ.birthState}
+                  onChange={(e) => updateOccupant(i, 'birthState', e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Birth Country</label>
+                <input
+                  type="text"
+                  value={occ.birthCountry}
+                  onChange={(e) => updateOccupant(i, 'birthCountry', e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <button
+        onClick={addOccupant}
+        className="mt-4 font-cinzel text-xs tracking-wider text-teal hover:text-teal-dark transition-colors"
+      >
+        + Add {service === 'human_design' ? 'Person' : 'Occupant'}
+      </button>
+    </div>
+  )
 
   return (
     <div className="min-h-screen flex items-center justify-center px-6 py-16">
@@ -253,7 +514,10 @@ export default function Intake() {
           Help us understand your space and intentions
         </p>
 
-        <StepIndicator current={step} />
+        {/* Show progress indicator only after service is selected */}
+        {step > 0 && (
+          <StepIndicator current={progressStep} steps={stepLabels} />
+        )}
 
         {error && (
           <div className="bg-magenta/10 border border-magenta/30 text-magenta px-4 py-3 font-cormorant text-base mb-6">
@@ -261,60 +525,40 @@ export default function Intake() {
           </div>
         )}
 
-        {/* Step 1 — Your Space */}
-        {step === 1 && (
-          <div className="space-y-5">
-            <div>
-              <label className={labelClass}>Space Type</label>
-              <select
-                value={spaceType}
-                onChange={(e) => setSpaceType(e.target.value)}
-                className={`${inputClass} appearance-none`}
-              >
-                <option value="">Select...</option>
-                {SPACE_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className={labelClass}>Square Footage</label>
-              <input
-                type="number"
-                value={squareFootage}
-                onChange={(e) => setSquareFootage(e.target.value)}
-                placeholder="e.g. 1200"
-                className={`${inputClass} placeholder:text-offwhite-muted/50`}
-              />
-            </div>
-
-            <div>
-              <label className={labelClass}>What issues are you currently experiencing?</label>
-              <textarea
-                value={problems}
-                onChange={(e) => setProblems(e.target.value)}
-                rows={4}
-                className={`${inputClass} resize-none`}
-              />
-            </div>
-
-            <div>
-              <label className={labelClass}>Anything else you'd like us to know?</label>
-              <textarea
-                value={additionalInfo}
-                onChange={(e) => setAdditionalInfo(e.target.value)}
-                rows={3}
-                className={`${inputClass} resize-none`}
-              />
+        {/* ── Step 0 — Choose Your Service ───────────────────────────── */}
+        {currentStepId === 'service' && (
+          <div className="space-y-6">
+            <label className={labelClass}>Choose Your Service</label>
+            <div className="space-y-3">
+              {SERVICE_OPTIONS.map((opt) => {
+                const selected = service === opt.id
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setService(opt.id)}
+                    className={`w-full text-left p-5 border transition-colors ${
+                      selected
+                        ? 'border-teal bg-teal/5'
+                        : 'border-charcoal-light hover:border-offwhite/30'
+                    }`}
+                  >
+                    <p className={`font-cinzel text-base tracking-wider ${selected ? 'text-teal' : 'text-offwhite'}`}>
+                      {opt.title}
+                    </p>
+                    <p className="font-cormorant text-base text-offwhite-muted mt-1">
+                      {opt.description}
+                    </p>
+                  </button>
+                )
+              })}
             </div>
 
             <div className="flex justify-end pt-4">
               <button
-                onClick={nextStep}
-                className="font-cinzel text-sm tracking-wider px-8 py-3 bg-magenta text-offwhite hover:bg-magenta-dark transition-colors"
+                onClick={() => service && selectServiceAndProceed(service)}
+                disabled={!service}
+                className={`${btnNext} disabled:opacity-30 disabled:cursor-not-allowed`}
               >
                 Next
               </button>
@@ -322,52 +566,154 @@ export default function Intake() {
           </div>
         )}
 
-        {/* Step 2 — Occupants & Intentions */}
-        {step === 2 && (
-          <div className="space-y-8">
-            {/* Occupants */}
+        {/* ── Property (feng_shui / both only) ───────────────────────── */}
+        {currentStepId === 'property' && (
+          <div className="space-y-5">
             <div>
-              <label className={labelClass}>Occupants</label>
-              <div className="space-y-3">
-                {occupants.map((occ, i) => (
-                  <div key={i} className="flex items-start gap-3">
-                    <input
-                      type="text"
-                      value={occ.name}
-                      onChange={(e) => updateOccupant(i, 'name', e.target.value)}
-                      placeholder="Name"
-                      className={`${inputClass} flex-1 placeholder:text-offwhite-muted/50`}
-                    />
-                    <input
-                      type="number"
-                      value={occ.birthYear}
-                      onChange={(e) => updateOccupant(i, 'birthYear', e.target.value)}
-                      placeholder="Birth year"
-                      className={`${inputClass} w-32 placeholder:text-offwhite-muted/50`}
-                    />
-                    {occupants.length > 1 && (
-                      <button
-                        onClick={() => removeOccupant(i)}
-                        className="mt-3 text-offwhite-muted hover:text-magenta transition-colors"
-                        title="Remove occupant"
-                      >
-                        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                          <line x1="4" y1="9" x2="14" y2="9" />
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-              <button
-                onClick={addOccupant}
-                className="mt-3 font-cinzel text-xs tracking-wider text-teal hover:text-teal-dark transition-colors"
-              >
-                + Add Occupant
-              </button>
+              <label className={labelClass}>Property Address</label>
+              <input
+                type="text"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="123 Main St, City, State ZIP"
+                className={`${inputClass} placeholder:text-offwhite-muted/50`}
+              />
             </div>
 
-            {/* Life Concerns */}
+            <div>
+              <label className={labelClass}>Year of Construction</label>
+              <input
+                type="number"
+                value={yearBuilt}
+                onChange={(e) => setYearBuilt(e.target.value)}
+                placeholder="e.g. 1985"
+                maxLength={4}
+                className={`${inputClass} placeholder:text-offwhite-muted/50 w-40`}
+              />
+            </div>
+
+            <FileUpload
+              label="Satellite View"
+              hint="Upload a satellite/aerial image of the property (optional)"
+              file={satelliteFile}
+              previewUrl={satellitePreview}
+              onSelect={handleSatelliteSelect}
+            />
+
+            <FileUpload
+              label="Floor Plan"
+              hint="Upload an image of your floor plan (optional)"
+              file={floorPlanFile}
+              previewUrl={floorPlanPreview}
+              onSelect={handleFloorPlanSelect}
+            />
+
+            {/* Renovations */}
+            <div className="border border-charcoal-light p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <label className={`${labelClass} mb-0`}>Have there been any major renovations?</label>
+                <button
+                  type="button"
+                  onClick={() => setRenovations((r) => ({ ...r, hasRenovations: !r.hasRenovations }))}
+                  className={`w-12 h-6 rounded-full relative transition-colors ${
+                    renovations.hasRenovations ? 'bg-teal' : 'bg-charcoal-light'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 w-5 h-5 rounded-full bg-offwhite transition-transform ${
+                      renovations.hasRenovations ? 'translate-x-6' : 'translate-x-0.5'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {renovations.hasRenovations && (
+                <>
+                  <div>
+                    <label className={labelClass}>Describe the renovations</label>
+                    <textarea
+                      value={renovations.description}
+                      onChange={(e) => setRenovations((r) => ({ ...r, description: e.target.value }))}
+                      rows={3}
+                      className={`${inputClass} resize-none`}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Year of renovation</label>
+                    <input
+                      type="number"
+                      value={renovations.year ?? ''}
+                      onChange={(e) => setRenovations((r) => ({ ...r, year: e.target.value ? Number(e.target.value) : null }))}
+                      placeholder="e.g. 2010"
+                      className={`${inputClass} placeholder:text-offwhite-muted/50 w-40`}
+                    />
+                  </div>
+                </>
+              )}
+
+              <div className="flex items-center justify-between">
+                <label className={`${labelClass} mb-0`}>Was the roof fully removed or replaced?</label>
+                <button
+                  type="button"
+                  onClick={() => setRenovations((r) => ({ ...r, roofRemoved: !r.roofRemoved }))}
+                  className={`w-12 h-6 rounded-full relative transition-colors ${
+                    renovations.roofRemoved ? 'bg-teal' : 'bg-charcoal-light'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 w-5 h-5 rounded-full bg-offwhite transition-transform ${
+                      renovations.roofRemoved ? 'translate-x-6' : 'translate-x-0.5'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {renovations.roofRemoved && (
+                <div>
+                  <label className={labelClass}>Year roof was removed/replaced</label>
+                  <input
+                    type="number"
+                    value={renovations.roofYear ?? ''}
+                    onChange={(e) => setRenovations((r) => ({ ...r, roofYear: e.target.value ? Number(e.target.value) : null }))}
+                    placeholder="e.g. 2018"
+                    className={`${inputClass} placeholder:text-offwhite-muted/50 w-40`}
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-between pt-4">
+              <button onClick={prevStep} className={btnBack}>Back</button>
+              <button onClick={nextStep} className={btnNext}>Next</button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Occupants ──────────────────────────────────────────────── */}
+        {currentStepId === 'occupants' && (
+          <div className="space-y-6">
+            {occupantCards}
+
+            <div className="flex justify-between pt-4">
+              <button onClick={prevStep} className={btnBack}>Back</button>
+              {isLastStep ? (
+                <button
+                  onClick={handleSubmit}
+                  disabled={submitting}
+                  className={`${btnNext} disabled:opacity-50`}
+                >
+                  {submitting ? 'Submitting...' : 'Complete Intake'}
+                </button>
+              ) : (
+                <button onClick={nextStep} className={btnNext}>Next</button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Goals & Issues (feng_shui / both only) ─────────────────── */}
+        {currentStepId === 'goals' && (
+          <div className="space-y-6">
             <div>
               <label className={labelClass}>Life Concerns</label>
               <p className="font-cormorant text-sm text-offwhite-muted/60 mb-3">
@@ -394,92 +740,34 @@ export default function Intake() {
               </div>
             </div>
 
-            <div className="flex justify-between pt-4">
-              <button
-                onClick={prevStep}
-                className="font-cinzel text-sm tracking-wider px-8 py-3 border border-charcoal-light text-offwhite-muted hover:border-offwhite hover:text-offwhite transition-colors"
-              >
-                Back
-              </button>
-              <button
-                onClick={nextStep}
-                className="font-cinzel text-sm tracking-wider px-8 py-3 bg-magenta text-offwhite hover:bg-magenta-dark transition-colors"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Step 3 — Floor Plan */}
-        {step === 3 && (
-          <div className="space-y-6">
             <div>
-              <label className={labelClass}>Floor Plan Upload</label>
-              <p className="font-cormorant text-sm text-offwhite-muted/60 mb-3">
-                Upload an image of your floor plan (optional)
-              </p>
+              <label className={labelClass}>Current Issues / Challenges</label>
+              <textarea
+                value={problems}
+                onChange={(e) => setProblems(e.target.value)}
+                rows={4}
+                placeholder="Describe any ongoing problems, stressors, or challenges you are experiencing"
+                className={`${inputClass} resize-none placeholder:text-offwhite-muted/50`}
+              />
+            </div>
 
-              <label className="block border border-dashed border-charcoal-light hover:border-offwhite/30 transition-colors cursor-pointer p-8 text-center">
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
-                {previewUrl ? (
-                  <div>
-                    <img
-                      src={previewUrl}
-                      alt="Floor plan preview"
-                      className="max-h-64 mx-auto mb-3 opacity-90"
-                    />
-                    <p className="font-cormorant text-sm text-offwhite-muted">
-                      {floorPlanFile?.name}
-                    </p>
-                    <p className="font-cormorant text-xs text-offwhite-muted/60 mt-1">
-                      Click to replace
-                    </p>
-                  </div>
-                ) : (
-                  <div>
-                    <svg
-                      width="40"
-                      height="40"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="mx-auto text-offwhite-muted/40 mb-3"
-                    >
-                      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-                      <polyline points="17,8 12,3 7,8" />
-                      <line x1="12" y1="3" x2="12" y2="15" />
-                    </svg>
-                    <p className="font-cormorant text-base text-offwhite-muted">
-                      Click to upload an image
-                    </p>
-                    <p className="font-cormorant text-sm text-offwhite-muted/50 mt-1">
-                      PNG, JPG, or WEBP
-                    </p>
-                  </div>
-                )}
-              </label>
+            <div>
+              <label className={labelClass}>Additional Information</label>
+              <textarea
+                value={additionalInfo}
+                onChange={(e) => setAdditionalInfo(e.target.value)}
+                rows={3}
+                placeholder="Anything else you would like your consultant to know"
+                className={`${inputClass} resize-none placeholder:text-offwhite-muted/50`}
+              />
             </div>
 
             <div className="flex justify-between pt-4">
-              <button
-                onClick={prevStep}
-                className="font-cinzel text-sm tracking-wider px-8 py-3 border border-charcoal-light text-offwhite-muted hover:border-offwhite hover:text-offwhite transition-colors"
-              >
-                Back
-              </button>
+              <button onClick={prevStep} className={btnBack}>Back</button>
               <button
                 onClick={handleSubmit}
                 disabled={submitting}
-                className="font-cinzel text-sm tracking-wider px-8 py-3 bg-magenta text-offwhite hover:bg-magenta-dark transition-colors disabled:opacity-50"
+                className={`${btnNext} disabled:opacity-50`}
               >
                 {submitting ? 'Submitting...' : 'Complete Intake'}
               </button>
