@@ -53,7 +53,7 @@ export default function Signup() {
       }
     }
 
-    navigate('/portal')
+    navigate('/intake')
   }
 
   return (

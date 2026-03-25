@@ -30,7 +30,19 @@ interface PasswordFormValues {
   confirmPassword: string
 }
 
-type View = 'consultations' | 'reports' | 'settings'
+interface IntakeData {
+  id: string
+  space_type: string | null
+  square_footage: number | null
+  problems: string | null
+  additional_info: string | null
+  occupants: { name: string; birthYear: string }[] | null
+  life_concerns: string[] | null
+  floor_plan_url: string | null
+  created_at: string
+}
+
+type View = 'consultations' | 'booking' | 'reports' | 'intake' | 'settings'
 
 // ── Shared UI ────────────────────────────────────────────────────────
 
@@ -97,6 +109,17 @@ function IconSettings() {
   )
 }
 
+function IconIntake() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a1 1 0 00-1 1v14a1 1 0 001 1h8a1 1 0 001-1V3a1 1 0 00-1-1z" />
+      <line x1="8" y1="6" x2="12" y2="6" />
+      <line x1="8" y1="9" x2="12" y2="9" />
+      <line x1="8" y1="12" x2="10" y2="12" />
+    </svg>
+  )
+}
+
 function IconSignOut() {
   return (
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -111,13 +134,16 @@ function IconSignOut() {
 
 interface SidebarProps {
   activeView: View
+  intakeComplete: boolean
   onNavigate: (view: View) => void
   onSignOut: () => void
 }
 
-function Sidebar({ activeView, onNavigate, onSignOut }: SidebarProps) {
+function Sidebar({ activeView, intakeComplete, onNavigate, onSignOut }: SidebarProps) {
   const navItems: { id: View; label: string; icon: React.ReactNode }[] = [
     { id: 'consultations', label: 'My Consultations', icon: <IconCalendar /> },
+    ...(intakeComplete ? [{ id: 'booking' as View, label: 'Book a Consultation', icon: <IconCalendar /> }] : []),
+    { id: 'intake', label: 'Intake', icon: <IconIntake /> },
     { id: 'reports', label: 'Reports', icon: <IconReport /> },
     { id: 'settings', label: 'Account Settings', icon: <IconSettings /> },
   ]
@@ -153,6 +179,7 @@ function Sidebar({ activeView, onNavigate, onSignOut }: SidebarProps) {
 
         {navItems.map((item) => {
           const active = activeView === item.id
+          const showBadge = item.id === 'intake' && !intakeComplete
           return (
             <button
               key={item.id}
@@ -164,10 +191,16 @@ function Sidebar({ activeView, onNavigate, onSignOut }: SidebarProps) {
               }`}
             >
               {item.icon}
-              {item.label}
+              <span className="flex-1">{item.label}</span>
+              {showBadge && (
+                <span className="text-[10px] tracking-wider bg-magenta/20 text-magenta border border-magenta/30 px-1.5 py-0.5 leading-none">
+                  Required
+                </span>
+              )}
             </button>
           )
         })}
+
       </nav>
 
       {/* Sign Out */}
@@ -186,7 +219,7 @@ function Sidebar({ activeView, onNavigate, onSignOut }: SidebarProps) {
 
 // ── Consultations View ───────────────────────────────────────────────
 
-function ConsultationsView({ consultations, loading, error }: { consultations: Consultation[]; loading: boolean; error: string | null }) {
+function ConsultationsView({ consultations, loading, error, onBook, intakeComplete }: { consultations: Consultation[]; loading: boolean; error: string | null; onBook: () => void; intakeComplete: boolean }) {
   if (loading) {
     return <p className="font-cormorant text-lg text-offwhite-muted">Loading consultations...</p>
   }
@@ -206,14 +239,23 @@ function ConsultationsView({ consultations, loading, error }: { consultations: C
           No consultations yet.
         </p>
         <p className="font-cormorant text-base text-offwhite-muted/60 mb-6">
-          Book your first session to get started.
+          {intakeComplete ? 'Book your first session to get started.' : 'Complete your intake form to get started.'}
         </p>
-        <Link
-          to="/#booking"
-          className="font-cinzel text-sm tracking-wider px-6 py-3 bg-magenta text-offwhite hover:bg-magenta-dark transition-colors inline-block"
-        >
-          Book Your First Session
-        </Link>
+        {intakeComplete ? (
+          <button
+            onClick={onBook}
+            className="font-cinzel text-sm tracking-wider px-6 py-3 bg-magenta text-offwhite hover:bg-magenta-dark transition-colors inline-block"
+          >
+            Book Your First Session
+          </button>
+        ) : (
+          <Link
+            to="/intake"
+            className="font-cinzel text-sm tracking-wider px-6 py-3 bg-magenta text-offwhite hover:bg-magenta-dark transition-colors inline-block"
+          >
+            Complete Intake
+          </Link>
+        )}
       </div>
     )
   }
@@ -300,6 +342,191 @@ function ReportsView({ consultations, loading, error }: { consultations: Consult
           )}
         </div>
       ))}
+    </div>
+  )
+}
+
+// ── Booking View ────────────────────────────────────────────────────
+
+function BookingView() {
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const win = window as any
+    if (!win.Cal) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(function (C: any, A: string, L: string) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const p = function (a: any, ar: any) { a.q.push(ar) }
+        const d = C.document
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        C.Cal = C.Cal || function (...args: any[]) {
+          const cal = C.Cal
+          if (!cal.loaded) {
+            cal.ns = {}
+            cal.q = cal.q || []
+            const s = d.createElement('script')
+            s.src = A
+            d.head.appendChild(s)
+            cal.loaded = true
+          }
+          if (args[0] === L) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const api: any = function (...a: any[]) { p(api, a) }
+            const namespace = args[1]
+            api.q = api.q || []
+            if (typeof namespace === 'string') {
+              cal.ns[namespace] = cal.ns[namespace] || api
+              p(cal.ns[namespace], args)
+              p(cal, ['initNamespace', namespace])
+            } else p(cal, args)
+            return
+          }
+          p(cal, args)
+        }
+      })(window, 'https://app.cal.com/embed/embed.js', 'init')
+    }
+
+    const Cal = win.Cal
+    const ns = 'portal-booking'
+
+    if (!Cal.ns?.[ns]) {
+      Cal('init', ns, { origin: 'https://app.cal.com' })
+    }
+
+    Cal.ns[ns]('inline', {
+      elementOrSelector: '#cal-embed-portal',
+      config: { layout: 'month_view', useSlotsViewOnSmallScreen: 'true' },
+      calLink: 'almittelstaedt/feng-shui-consultation',
+    })
+    Cal.ns[ns]('ui', {
+      hideEventTypeDetails: false,
+      layout: 'month_view',
+    })
+  }, [])
+
+  return (
+    <div>
+      <p className="font-cormorant text-lg text-offwhite-muted mb-6">
+        Select a date and time for your feng shui consultation.
+      </p>
+      <div className="bg-charcoal-dark">
+        <div
+          id="cal-embed-portal"
+          style={{ width: '100%', height: '900px', overflow: 'hidden' }}
+        />
+      </div>
+    </div>
+  )
+}
+
+// ── Intake View ─────────────────────────────────────────────────────
+
+function IntakeView({ intake, loading }: { intake: IntakeData | null; loading: boolean }) {
+  if (loading) {
+    return <p className="font-cormorant text-lg text-offwhite-muted">Loading...</p>
+  }
+
+  if (!intake) {
+    return (
+      <div className="border border-charcoal-light p-10 text-center">
+        <p className="font-cormorant text-xl text-offwhite-muted mb-4">
+          No intake form submitted yet.
+        </p>
+        <p className="font-cormorant text-base text-offwhite-muted/60 mb-6">
+          Complete your intake to help us prepare for your consultation.
+        </p>
+        <a
+          href="/intake"
+          className="font-cinzel text-sm tracking-wider px-6 py-3 bg-magenta text-offwhite hover:bg-magenta-dark transition-colors inline-block"
+        >
+          Complete Intake
+        </a>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="border border-charcoal-light p-6 space-y-4">
+        <h3 className="font-cinzel text-base text-offwhite mb-2">Your Space</h3>
+        <div className="grid grid-cols-2 gap-4">
+          {intake.space_type && (
+            <div>
+              <p className="font-cinzel text-xs tracking-wider text-offwhite-muted mb-1">Space Type</p>
+              <p className="font-cormorant text-lg text-offwhite">{intake.space_type}</p>
+            </div>
+          )}
+          {intake.square_footage && (
+            <div>
+              <p className="font-cinzel text-xs tracking-wider text-offwhite-muted mb-1">Square Footage</p>
+              <p className="font-cormorant text-lg text-offwhite">{intake.square_footage.toLocaleString()} sq ft</p>
+            </div>
+          )}
+        </div>
+        {intake.problems && (
+          <div>
+            <p className="font-cinzel text-xs tracking-wider text-offwhite-muted mb-1">Current Challenges</p>
+            <p className="font-cormorant text-base text-offwhite-muted leading-relaxed">{intake.problems}</p>
+          </div>
+        )}
+        {intake.additional_info && (
+          <div>
+            <p className="font-cinzel text-xs tracking-wider text-offwhite-muted mb-1">Additional Information</p>
+            <p className="font-cormorant text-base text-offwhite-muted leading-relaxed">{intake.additional_info}</p>
+          </div>
+        )}
+      </div>
+
+      {intake.occupants && intake.occupants.length > 0 && (
+        <div className="border border-charcoal-light p-6">
+          <h3 className="font-cinzel text-base text-offwhite mb-4">Occupants</h3>
+          <div className="space-y-2">
+            {intake.occupants.map((occ, i) => (
+              <div key={i} className="flex items-center gap-4">
+                <p className="font-cormorant text-lg text-offwhite">{occ.name}</p>
+                {occ.birthYear && (
+                  <p className="font-cormorant text-base text-offwhite-muted">Born {occ.birthYear}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {intake.life_concerns && intake.life_concerns.length > 0 && (
+        <div className="border border-charcoal-light p-6">
+          <h3 className="font-cinzel text-base text-offwhite mb-4">Life Concerns</h3>
+          <div className="flex flex-wrap gap-2">
+            {intake.life_concerns.map((concern) => (
+              <span
+                key={concern}
+                className="inline-block px-3 py-1 text-xs font-cinzel tracking-wider border border-teal/30 bg-teal/10 text-teal"
+              >
+                {concern}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {intake.floor_plan_url && (
+        <div className="border border-charcoal-light p-6">
+          <h3 className="font-cinzel text-base text-offwhite mb-4">Floor Plan</h3>
+          <img
+            src={intake.floor_plan_url}
+            alt="Floor plan"
+            className="max-h-80 opacity-90"
+          />
+        </div>
+      )}
+
+      <p className="font-cormorant text-sm text-offwhite-muted/50">
+        Submitted {new Date(intake.created_at).toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        })}
+      </p>
     </div>
   )
 }
@@ -467,6 +694,8 @@ function SettingsView({ client, onClientUpdate }: { client: ClientProfile | null
 
 const viewTitles: Record<View, string> = {
   consultations: 'My Consultations',
+  booking: 'Book a Consultation',
+  intake: 'Intake',
   reports: 'Reports',
   settings: 'Account Settings',
 }
@@ -478,6 +707,7 @@ export default function Portal() {
   const [activeView, setActiveView] = useState<View>('consultations')
   const [consultations, setConsultations] = useState<Consultation[]>([])
   const [client, setClient] = useState<ClientProfile | null>(null)
+  const [intake, setIntake] = useState<IntakeData | null>(null)
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState<string | null>(null)
 
@@ -519,6 +749,18 @@ export default function Portal() {
         }
       }
 
+      // Fetch intake form
+      const { data: intakeData } = await supabase
+        .from('intake_forms')
+        .select('id, space_type, square_footage, problems, additional_info, occupants, life_concerns, floor_plan_url, created_at')
+        .eq('user_id', session.user.id)
+        .limit(1)
+        .single()
+
+      if (intakeData) {
+        setIntake(intakeData)
+      }
+
       setLoading(false)
     }
 
@@ -527,7 +769,7 @@ export default function Portal() {
 
   return (
     <div className="flex min-h-screen">
-      <Sidebar activeView={activeView} onNavigate={setActiveView} onSignOut={signOut} />
+      <Sidebar activeView={activeView} intakeComplete={!!intake} onNavigate={setActiveView} onSignOut={signOut} />
 
       <div className="ml-[220px] flex-1 px-10 py-10">
         {/* Header */}
@@ -540,10 +782,31 @@ export default function Portal() {
           </p>
         </div>
 
+        {/* Intake required banner */}
+        {!loading && !intake && (
+          <div className="bg-magenta/10 border border-magenta/30 px-5 py-4 mb-8 flex items-center justify-between gap-4 max-w-3xl">
+            <p className="font-cormorant text-base text-magenta">
+              Complete your intake form before booking a consultation.
+            </p>
+            <Link
+              to="/intake"
+              className="font-cinzel text-xs tracking-wider px-5 py-2 bg-magenta text-offwhite hover:bg-magenta-dark transition-colors whitespace-nowrap shrink-0"
+            >
+              Complete Intake
+            </Link>
+          </div>
+        )}
+
         {/* Content */}
         <div className="max-w-3xl">
           {activeView === 'consultations' && (
-            <ConsultationsView consultations={consultations} loading={loading} error={fetchError} />
+            <ConsultationsView consultations={consultations} loading={loading} error={fetchError} onBook={() => setActiveView('booking')} intakeComplete={!!intake} />
+          )}
+          {activeView === 'booking' && (
+            <BookingView />
+          )}
+          {activeView === 'intake' && (
+            <IntakeView intake={intake} loading={loading} />
           )}
           {activeView === 'reports' && (
             <ReportsView consultations={consultations} loading={loading} error={fetchError} />

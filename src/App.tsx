@@ -1,10 +1,38 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, Link, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './lib/auth'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
 import Portal from './pages/Portal'
+import Intake from './pages/Intake'
+import { supabase } from './lib/supabase'
+import { useNavigate } from 'react-router-dom'
 import './index.css'
+
+// ── Shared intake check hook ─────────────────────────────────────────
+
+function useIntakeStatus() {
+  const { session } = useAuth()
+  const [hasIntake, setHasIntake] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    if (!session?.user?.id) {
+      setHasIntake(null)
+      return
+    }
+
+    supabase
+      .from('intake_forms')
+      .select('id')
+      .eq('user_id', session.user.id)
+      .limit(1)
+      .then(({ data }) => {
+        setHasIntake(!!data && data.length > 0)
+      })
+  }, [session])
+
+  return hasIntake
+}
 
 function Logo() {
   return (
@@ -27,9 +55,15 @@ function Logo() {
 }
 
 function Nav() {
-  const { user } = useAuth()
+  const { user, signOut } = useAuth()
+  const navigate = useNavigate()
   const location = useLocation()
   const isHome = location.pathname === '/'
+
+  const handleSignOut = async () => {
+    await signOut()
+    navigate('/')
+  }
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-charcoal/95 backdrop-blur-sm border-b border-charcoal-light">
@@ -59,12 +93,20 @@ function Nav() {
             </>
           )}
           {user ? (
-            <Link
-              to="/portal"
-              className="font-cinzel text-sm tracking-wider px-5 py-2 border border-teal text-teal hover:bg-teal hover:text-charcoal transition-all"
-            >
-              My Portal
-            </Link>
+            <>
+              <Link
+                to="/portal"
+                className="font-cinzel text-sm tracking-wider px-5 py-2 border border-teal text-teal hover:bg-teal hover:text-charcoal transition-all"
+              >
+                My Portal
+              </Link>
+              <button
+                onClick={handleSignOut}
+                className="font-cinzel text-sm tracking-wider text-offwhite-muted hover:text-offwhite transition-colors"
+              >
+                Sign Out
+              </button>
+            </>
           ) : (
             <>
               <Link
@@ -155,6 +197,24 @@ function BaguaArt() {
   )
 }
 
+function HeroCta() {
+  const { user } = useAuth()
+  const hasIntake = useIntakeStatus()
+
+  const ctaClass = 'font-cinzel text-sm tracking-wider px-8 py-4 bg-magenta text-offwhite hover:bg-magenta-dark transition-colors'
+
+  if (!user) {
+    return <Link to="/signup" className={ctaClass}>Create Your Account</Link>
+  }
+  if (hasIntake === null) {
+    return <span className={`${ctaClass} opacity-50`}>Loading...</span>
+  }
+  if (!hasIntake) {
+    return <Link to="/intake" className={ctaClass}>Complete Your Intake</Link>
+  }
+  return <a href="#booking" className={ctaClass}>Schedule a Consultation</a>
+}
+
 function Hero() {
   return (
     <section className="flex items-center h-screen">
@@ -169,12 +229,7 @@ function Hero() {
             harmony, clarity, and intention.
           </p>
           <div className="flex flex-wrap items-center gap-6">
-            <a
-              href="#booking"
-              className="font-cinzel text-sm tracking-wider px-8 py-4 bg-magenta text-offwhite hover:bg-magenta-dark transition-colors"
-            >
-              Schedule a Consultation
-            </a>
+            <HeroCta />
             <a
               href="#process"
               className="font-cormorant text-lg text-offwhite-muted hover:text-teal transition-colors border-b border-offwhite-muted hover:border-teal"
@@ -293,7 +348,7 @@ function Process() {
   )
 }
 
-function Booking() {
+function CalEmbed() {
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (function (C: any, A: string, L: string) {
@@ -342,6 +397,82 @@ function Booking() {
   }, [])
 
   return (
+    <div className="bg-charcoal-dark min-h-[900px]">
+      <div
+        id="my-cal-inline-feng-shui-consultation"
+        style={{ width: '100%', height: '900px', overflow: 'hidden' }}
+      />
+    </div>
+  )
+}
+
+function BookingGate() {
+  const { user } = useAuth()
+  const hasIntake = useIntakeStatus()
+
+  // Not logged in
+  if (!user) {
+    return (
+      <div className="bg-charcoal-dark border border-charcoal-light p-10 flex flex-col items-center justify-center min-h-[400px] text-center">
+        <h4 className="font-cinzel text-xl text-offwhite mb-3">
+          Create your account to book a consultation
+        </h4>
+        <p className="font-cormorant text-lg text-offwhite-muted mb-8 max-w-sm">
+          Sign up to get started with your personalized Feng Shui consultation.
+        </p>
+        <div className="flex items-center gap-4">
+          <Link
+            to="/signup"
+            className="font-cinzel text-sm tracking-wider px-6 py-3 bg-magenta text-offwhite hover:bg-magenta-dark transition-colors"
+          >
+            Sign Up
+          </Link>
+          <Link
+            to="/login"
+            className="font-cinzel text-sm tracking-wider px-6 py-3 border border-charcoal-light text-offwhite-muted hover:border-offwhite hover:text-offwhite transition-colors"
+          >
+            Sign In
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
+  // Logged in, checking intake
+  if (hasIntake === null) {
+    return (
+      <div className="bg-charcoal-dark border border-charcoal-light p-10 flex items-center justify-center min-h-[400px]">
+        <p className="font-cormorant text-lg text-offwhite-muted">Loading...</p>
+      </div>
+    )
+  }
+
+  // Logged in, intake not complete
+  if (!hasIntake) {
+    return (
+      <div className="bg-charcoal-dark border border-charcoal-light p-10 flex flex-col items-center justify-center min-h-[400px] text-center">
+        <h4 className="font-cinzel text-xl text-offwhite mb-3">
+          Complete your intake form to unlock booking
+        </h4>
+        <p className="font-cormorant text-lg text-offwhite-muted mb-8 max-w-sm">
+          We need to learn about your space before scheduling your consultation.
+        </p>
+        <Link
+          to="/intake"
+          className="font-cinzel text-sm tracking-wider px-6 py-3 bg-magenta text-offwhite hover:bg-magenta-dark transition-colors"
+        >
+          Complete Intake
+        </Link>
+      </div>
+    )
+  }
+
+  // Logged in + intake complete — show Cal.com
+  return <CalEmbed />
+}
+
+function Booking() {
+  return (
     <section id="booking" className="py-24 border-t border-charcoal-light">
       <div className="max-w-6xl mx-auto px-6">
         <div className="grid md:grid-cols-2 gap-16 items-start">
@@ -362,12 +493,7 @@ function Booking() {
               that truly supports you.
             </p>
           </div>
-          <div className="bg-charcoal-dark min-h-[900px]">
-            <div
-              id="my-cal-inline-feng-shui-consultation"
-              style={{ width: '100%', height: '900px', overflow: 'hidden' }}
-            />
-          </div>
+          <BookingGate />
         </div>
       </div>
     </section>
@@ -417,6 +543,15 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+function IntakeGuard({ children }: { children: React.ReactNode }) {
+  const hasIntake = useIntakeStatus()
+
+  if (hasIntake === null) return null
+  if (!hasIntake) return <Navigate to="/intake" replace />
+
+  return <>{children}</>
+}
+
 function HomePage() {
   return (
     <>
@@ -431,11 +566,22 @@ function HomePage() {
 function AppLayout() {
   const location = useLocation()
   const isPortal = location.pathname === '/portal'
+  const isIntake = location.pathname === '/intake'
 
   if (isPortal) {
     return (
       <ProtectedRoute>
-        <Portal />
+        <IntakeGuard>
+          <Portal />
+        </IntakeGuard>
+      </ProtectedRoute>
+    )
+  }
+
+  if (isIntake) {
+    return (
+      <ProtectedRoute>
+        <Intake />
       </ProtectedRoute>
     )
   }
@@ -448,14 +594,6 @@ function AppLayout() {
           <Route path="/" element={<HomePage />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
-          <Route
-            path="/portal"
-            element={
-              <ProtectedRoute>
-                <Portal />
-              </ProtectedRoute>
-            }
-          />
         </Routes>
       </main>
       <Footer />
