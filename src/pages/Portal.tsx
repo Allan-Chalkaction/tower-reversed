@@ -173,7 +173,7 @@ function Sidebar({ activeView, intakeComplete, onNavigate, onSignOut }: SidebarP
     <aside className="fixed top-0 left-0 bottom-0 w-[220px] bg-[#222222] border-r border-charcoal-light flex flex-col z-50">
       {/* Logo */}
       <Link to="/" className="px-5 pt-6 pb-8">
-        <img src="/logo.jpg" alt="Tower Reversed" style={{ height: 36, width: 'auto' }} />
+        <img src="/tr_logo.png" alt="Tower Reversed" style={{ height: 80, width: 'auto' }} />
       </Link>
 
       {/* Navigation */}

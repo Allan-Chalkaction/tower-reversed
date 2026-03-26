@@ -37,7 +37,7 @@ function useIntakeStatus() {
 function Logo() {
   return (
     <Link to="/">
-      <img src="/logo.jpg" alt="Tower Reversed" style={{ height: 160, width: 'auto' }} />
+      <img src="/tr_logo.png" alt="Tower Reversed" style={{ height: '180px', width: 'auto', objectFit: 'contain' }} />
     </Link>
   )
 }
@@ -54,8 +54,8 @@ function Nav() {
   }
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 bg-charcoal/95 backdrop-blur-sm border-b border-charcoal-light overflow-visible">
-      <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+    <nav className="fixed top-0 left-0 right-0 z-50 bg-charcoal/95 backdrop-blur-sm border-b border-charcoal-light min-h-[130px]">
+      <div className="max-w-6xl mx-auto px-6 h-full flex items-center justify-between">
         <Logo />
         <div className="hidden md:flex items-center gap-8">
           {isHome && (
